@@ -1,0 +1,7 @@
+{
+  "@@locale": "zh",
+  "welcome": "欢迎来到CERES™！",
+  "loadingMessage": "请稍候，我们正在确保一切就绪。",
+  "noConnectionMessage": "未检测到互联网连接。\n请检查您的连接。",
+  "retry": "重试"
+}

@@ -1,0 +1,7 @@
+{
+  "@@locale": "en",
+  "welcome": "Welcome to CERES™ !",
+  "loadingMessage": "Please wait, we are making sure everything is ready.",
+  "noConnectionMessage": "No internet connection detected.\nPlease check your connection.",
+  "retry": "Retry"
+}

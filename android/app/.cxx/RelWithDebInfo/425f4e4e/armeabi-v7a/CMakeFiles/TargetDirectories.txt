@@ -1,0 +1,2 @@
+C:/Users/givea/StudioProjects/CERESMobile/android/app/.cxx/RelWithDebInfo/425f4e4e/armeabi-v7a/CMakeFiles/edit_cache.dir
+C:/Users/givea/StudioProjects/CERESMobile/android/app/.cxx/RelWithDebInfo/425f4e4e/armeabi-v7a/CMakeFiles/rebuild_cache.dir
