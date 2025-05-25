@@ -1,6 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:ceres/screens/NewTabWebView.dart';
+import 'package:ceres/widgets/LoadingOverlay.dart';
+import 'package:ceres/widgets/NoConnectionBox.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -36,50 +39,50 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> {
-  Locale _locale = const Locale('en');
+    Locale _locale = const Locale('en');
 
-  @override
-  void initState() {
-    super.initState();
-    _loadLocale();
-  }
+    @override
+    void initState() {
+      super.initState();
+      _loadLocale();
+    }
 
-  Future<void> _loadLocale() async {
-    final prefs = await SharedPreferences.getInstance();
-    final code = prefs.getString('language_code') ?? 'en';
-    setState(() {
-      _locale = Locale(code);
-    });
-  }
+    Future<void> _loadLocale() async {
+      final prefs = await SharedPreferences.getInstance();
+      final code = prefs.getString('language_code') ?? 'en';
+      setState(() {
+        _locale = Locale(code);
+      });
+    }
 
-  void setLocale(Locale locale) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('language_code', locale.languageCode);
-    setState(() => _locale = locale);
-  }
+    void setLocale(Locale locale) async {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('language_code', locale.languageCode);
+      setState(() => _locale = locale);
+    }
 
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'CERES WebView',
-      debugShowCheckedModeBanner: false,
-      locale: _locale,
-      supportedLocales: const [
-        Locale('en'),
-        Locale('es'),
-        Locale('fr'),
-        Locale('zh'),
-        Locale('de'),
-      ],
-      localizationsDelegates: const [
-        AppLocalizations.delegate,
-        GlobalMaterialLocalizations.delegate,
-        GlobalWidgetsLocalizations.delegate,
-        GlobalCupertinoLocalizations.delegate,
-      ],
-      home: FullScreenWebView(onLocaleChanged: setLocale),
-    );
-  }
+    @override
+    Widget build(BuildContext context) {
+      return MaterialApp(
+        title: 'CERES WebView',
+        debugShowCheckedModeBanner: false,
+        locale: _locale,
+        supportedLocales: const [
+          Locale('en'),
+          Locale('es'),
+          Locale('fr'),
+          Locale('zh'),
+          Locale('de'),
+        ],
+        localizationsDelegates: const [
+          AppLocalizations.delegate,
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+        home: FullScreenWebView(onLocaleChanged: setLocale),
+      );
+    }
 }
 
 class FullScreenWebView extends StatefulWidget {
@@ -91,17 +94,18 @@ class FullScreenWebView extends StatefulWidget {
 }
 
 class _FullScreenWebViewState extends State<FullScreenWebView> with WidgetsBindingObserver{
-  // null = checking, true = connected, false = no connection
   bool? _connectionStatus;
-  bool _hasAskedPermission = false;
   late InAppWebViewController _webViewController;
   String _startUrl = serverUrl;
-  bool _isDomainLoaded = false; // Flag to ensure domain is loaded
-  Map<String, dynamic> data = {"name": "Alice", "age": 30};
-  bool _firstLocationSent = false;
+  bool _isDomainLoaded = false;
+  Map<String, dynamic> data = {};
   late final String chromeUserAgent;
   bool _showGoogleCloseButton = false;
   bool _isPageReady = false;
+  bool _bgInitDone = false;
+  bool _heartbeatAttached = false;
+  //poate o sa il folosesc later, daca consum prea mult ram (sau nu se inchide automat listener-ul dupa ce am oprit tracking-ul)
+  //late StreamSubscription<bg.HeartbeatEvent> _hbSub;
 
   @override
   void initState() {
@@ -112,11 +116,45 @@ class _FullScreenWebViewState extends State<FullScreenWebView> with WidgetsBindi
     chromeUserAgent = Platform.isIOS
         ? "Mozilla/5.0 (iPad; CPU OS 17_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/134.0.6998.99 Mobile/15E148 Safari/604.1"
         : "Mozilla/5.0 (Linux; Android 14; Pixel 8 Build/UP1A.230905.014) AppleWebKit/605.1.15 (KHTML, like Gecko) Chrome/134.0.0.0 Mobile Safari/604.1";
+
   }
 
   Future<void> _initializeApp() async {
     await _loadPreferredDomain();
     await _initConnectivity();
+  }
+
+  Future<void> _initBgGeo() async {
+    if (_bgInitDone) return;
+    await bg.BackgroundGeolocation.ready(bg.Config(
+      desiredAccuracy : bg.Config.DESIRED_ACCURACY_HIGH,
+      distanceFilter  : 10,
+      stopTimeout     : 5,
+      debug           : false,
+      logLevel        : bg.Config.LOG_LEVEL_INFO,
+      showsBackgroundLocationIndicator : true,
+      disableMotionActivityUpdates     : true,
+      stopOnTerminate : false,
+      startOnBoot     : true,
+      heartbeatInterval: 300,
+    ));
+
+    bg.BackgroundGeolocation.onLocation(
+            (l) => debugPrint("📍 ${l.coords.latitude},${l.coords.longitude}"));
+
+    if (!_heartbeatAttached) {
+      _heartbeatAttached = true;
+
+      bg.BackgroundGeolocation.onHeartbeat((event) async {
+        await bg.BackgroundGeolocation.getCurrentPosition(
+          persist         : true,
+          desiredAccuracy : bg.Config.DESIRED_ACCURACY_HIGH,
+          timeout         : 30,
+          samples         : 1,
+        );
+      });
+    }
+    _bgInitDone = true;
   }
 
   @override
@@ -130,14 +168,15 @@ class _FullScreenWebViewState extends State<FullScreenWebView> with WidgetsBindi
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
+
+    if (!_isPageReady) return;
+
     if (_webViewController != null) {
       if (state == AppLifecycleState.paused) {
-        // When entering background.
         _webViewController.evaluateJavascript(
             source: "if (window.webApp && typeof window.webApp.call === 'function') { window.webApp.call('enterInBackground',''); }"
         );
       } else if (state == AppLifecycleState.resumed) {
-        // When exiting background.
         _webViewController.evaluateJavascript(
             source: "if (window.webApp && typeof window.webApp.call === 'function') { window.webApp.call('exitFromBackground',''); }"
         );
@@ -198,16 +237,15 @@ class _FullScreenWebViewState extends State<FullScreenWebView> with WidgetsBindi
         body: Center(child: CircularProgressIndicator()),
       );
     }
-    // Show the WebView or the no-connection screen.
     return Scaffold(
       body: _connectionStatus!
           ? Stack(
               children: [
                 _buildWebView(),
-                if (!_isPageReady) _buildLoadingOverlay(context),
+                if (!_isPageReady) LoadingOverlay(),
               ],
             )
-          : _buildNoConnectionBox(context),
+          : NoConnectionBox(onRetry: () { _initConnectivity(); },),
     );
   }
 
@@ -233,19 +271,14 @@ class _FullScreenWebViewState extends State<FullScreenWebView> with WidgetsBindi
                 _webViewController.addJavaScriptHandler(
                   handlerName: "startTracking",
                   callback: (args) {
-                    if (args.isNotEmpty) {
-                      final duration = int.tryParse(args[0].toString());
-                      if (duration != null) {
-                        _startBackgroundGeolocation(duration);
-                        final payload = jsonEncode({'duration': duration});
-                        _webViewController.evaluateJavascript(
-                            source: "if (window.webApp && typeof window.webApp.call === 'function') { window.webApp.call('startTracking', '$payload'); }"
-                        );
-                      }
+                    final duration = args.isNotEmpty ? int.tryParse(args[0].toString()) : null;
+                    if (duration != null) {
+                      startTracking(duration);
                     }
                     return;
                   },
                 );
+
                 _webViewController.addJavaScriptHandler(
                   handlerName: "changeLanguage",
                   callback: (args) {
@@ -276,11 +309,12 @@ class _FullScreenWebViewState extends State<FullScreenWebView> with WidgetsBindi
 
                 _webViewController.addJavaScriptHandler(
                   handlerName: "pageReady",
-                  callback: (args) {
+                  callback: (args) async {
                     setState(() {
                       _isPageReady = true;
                     });
                     final payload = jsonEncode({});
+                    await _initBgGeo();
                     _webViewController.evaluateJavascript(
                         source: "if (window.webApp && typeof window.webApp.call === 'function') { window.webApp.call('pageReady', '$payload'); }"
                     );
@@ -381,344 +415,71 @@ class _FullScreenWebViewState extends State<FullScreenWebView> with WidgetsBindi
       ),
     );
   }
+  //modified the logic of startTracking (IOS different than android, from what i read , i need to ask later (second time) to always allow in the
+  //background to gather the location
+  Future<void> startTracking(int duration) async {
+    var perm = await bg.BackgroundGeolocation.requestPermission();
 
-  Widget _buildLoadingOverlay(BuildContext context) {
-    final screenSize = MediaQuery.of(context).size;
-    final boxWidth = screenSize.width * 0.85;
-    final boxHeight = screenSize.height * 0.66;
-    return Container(
-      color: Colors.white.withOpacity(0.95),
-      child: Center(
-        child: Container(
-          width: boxWidth,
-          height: boxHeight,
-          padding: EdgeInsets.all(screenSize.width * 0.04),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(8),
-            boxShadow: const [
-              BoxShadow(
-                color: Color.fromRGBO(0, 0, 0, 0.1),
-                spreadRadius: 2,
-                blurRadius: 10,
-                offset: Offset(2, 5),
-              ),
-            ],
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Image.asset(
-                'assets/logo_connection_out.png',
-                width: screenSize.width * 0.15,
-                height: screenSize.width * 0.15,
-              ),
-              const SizedBox(height: 20),
-              Text(
-                AppLocalizations.of(context)!.welcome,
-                style: const TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black87,
-                ),
-              ),
-              const SizedBox(height: 10),
-               Text(
-                AppLocalizations.of(context)!.loadingMessage,
-                style: TextStyle(fontSize: 16, color: Colors.black54),
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+    if (perm == 4) {                       // 4 == WHEN_IN_USE
+      perm = await bg.BackgroundGeolocation.requestPermission();
+    }
 
-  Future<void> _startBackgroundGeolocation(int duration) async {
-    try {
-      final status = await Permission.locationWhenInUse.status;
+    if (perm != 3) {                       // 3 == AUTHORIZED (Always)
+      await _webViewController.evaluateJavascript(
+          source:"window.webApp?.call?.('message', "
+              "'{\"errorMessage\":\"Location permission denied\"}');");
+      return;
+    }
 
-      if (status.isDenied || status.isPermanentlyDenied) {
-        // Request permission
-        final newStatus = await Permission.locationWhenInUse.request();
-        if (!newStatus.isGranted) {
-          debugPrint("Location permission denied. Cannot start tracking.");
-
-          final payload = jsonEncode({
-            "errorMessage": "Location permission denied by user"
-          });
-          await _webViewController.evaluateJavascript(
-              source: """
-            if (window.webApp && typeof window.webApp.call === 'function') {
-              window.webApp.call('message', '$payload');
-            }
-          """
-          );
-          return;
-        }
-      }
-
-      final prefs = await SharedPreferences.getInstance();
-      final cookieJson = prefs.getString('cookies');
-      if (cookieJson == null) {
-        debugPrint("No cookies in SharedPreferences—cannot start geolocation.");
-        final payload = jsonEncode({
-          "errorMessage": "No cookies found. Cannot start geolocation."
-        });
-        await _webViewController.evaluateJavascript(
-            source: """
-          if (window.webApp && typeof window.webApp.call === 'function') {
-            window.webApp.call('message', '$payload');
-          }
-        """
-        );
-        return;
-      }
-
-      final List allCookies = jsonDecode(cookieJson);
-      final neededCookieNames = {'rememberMe', '__stripe_mid', 'SESSION'};
-      final filteredCookies = allCookies
-          .where((c) => neededCookieNames.contains(c['name']))
-          .toList();
-      final cookieHeaderValue =
-      filteredCookies.map((c) => '${c['name']}=${c['value']}').join('; ');
-      debugPrint("Cookie header: $cookieHeaderValue");
-
-      // Wrap the background-geolocation config in a try-catch
-      try {
-        bg.BackgroundGeolocation.ready(
-          bg.Config(
-            url: "$serverUrl/tracking/updateMobileDeviceLocation",
-            method: 'POST',
-            headers: {
-              'Cookie': cookieHeaderValue,
-              'Content-Type': 'application/json',
-            },
-            autoSync: true,
-            distanceFilter: 10,
-            desiredAccuracy: bg.Config.DESIRED_ACCURACY_HIGH,
-            stopOnTerminate: false,
-            enableHeadless: true,
-            debug: true,
-            logLevel: bg.Config.LOG_LEVEL_VERBOSE,
-            stopAfterElapsedMinutes: duration,
-            heartbeatInterval: 180,
-            isMoving: true,
-            stationaryRadius: 5,
-            locationUpdateInterval: 60000,
-            backgroundPermissionRationale: bg.PermissionRationale(
-              title: "Allow CERES to access your location in the background?",
-              message:
-              "CERES collects location data only for user-initiated location sharing and tracking.",
-              positiveAction: "Change to 'Allow all the time'",
-              negativeAction: "Cancel",
-            ),
-          ),
-        ).then((bg.State state) async {
-          if (!state.enabled) {
-            await bg.BackgroundGeolocation.start();
-            debugPrint(
-                "BackgroundGeolocation started. Will stop in ~$duration minutes.");
-          }
-          bg.BackgroundGeolocation.onHttp((bg.HttpEvent event) {
-            debugPrint("[HTTP] status: \${event.status}, "
-                "success: \${event.success}, response: \${event.responseText}");
-          });
-        });
-      } catch (e) {
-        debugPrint("Error initializing background geolocation: \$e");
-        final payload = jsonEncode({
-          "errorMessage": "Error initializing background geolocation: \$e"
-        });
-        await _webViewController.evaluateJavascript(
-            source: """
-          if (window.webApp && typeof window.webApp.call === 'function') {
-            window.webApp.call('message', '$payload');
-          }
-        """
-        );
-        return;
-      }
-
-      _firstLocationSent = false;
-
-      bg.BackgroundGeolocation.onLocation((bg.Location location) async {
-        if (!_firstLocationSent) {
-          _firstLocationSent = true;
-          final lat = location.coords.latitude;
-          final lng = location.coords.longitude;
-
-          final payload = jsonEncode({
-            "latitude": lat,
-            "longitude": lng,
-          });
-
-          final jsCall = """
-          if (window.webApp && typeof window.webApp.call === 'function') {
-            window.webApp.call('startTracking', '$payload');
-          }
-        """;
-
-          try {
-            await _webViewController.evaluateJavascript(source: jsCall);
-            debugPrint("✅ Sent location via window.webApp.call()");
-          } catch (e) {
-            debugPrint("❌ JS call failed: \$e");
-          }
-        }
-      });
-
-      bg.BackgroundGeolocation.onHeartbeat((bg.HeartbeatEvent event) {
-        debugPrint("[HEARTBEAT] Sending forced location update.");
-        bg.BackgroundGeolocation
-            .getCurrentPosition(
-          persist: true,
-          samples: 1,
-          desiredAccuracy: bg.Config.DESIRED_ACCURACY_HIGH,
-        )
-            .then((bg.Location location) {
-          debugPrint("[HEARTBEAT LOCATION] \${location.coords}");
-        });
-      });
-    } catch (e) {
-      debugPrint("Unexpected error in _startBackgroundGeolocation: \$e");
+    final prefs = await SharedPreferences.getInstance();
+    final cookieJson = prefs.getString('cookies');
+    if (cookieJson == null) {
       final payload = jsonEncode({
-        "errorMessage": "Unexpected error in _startBackgroundGeolocation: \$e"
+        "errorMessage": "No cookies found. Cannot start tracking."
       });
       await _webViewController.evaluateJavascript(
-          source: """
-        if (window.webApp && typeof window.webApp.call === 'function') {
-          window.webApp.call('message', '$payload');
-        }
-      """
+          source: "window.webApp.call('message', '$payload');"
       );
+      return;
     }
-  }
 
+    final List allCookies = jsonDecode(cookieJson);
+    final neededCookieNames = {'rememberMe', '__stripe_mid', 'SESSION'};
+    final filteredCookies = allCookies.where((c) => neededCookieNames.contains(c['name'])).toList();
+    final cookieHeaderValue = filteredCookies.map((c) => '${c['name']}=${c['value']}').join('; ');
+
+    await bg.BackgroundGeolocation.setConfig(bg.Config(
+      url: "$serverUrl/tracking/updateMobileDeviceLocation",
+      method: 'POST',
+      headers: {
+        'Cookie': cookieHeaderValue,
+        'Content-Type': 'application/json',
+      },
+      stopAfterElapsedMinutes : duration,
+      heartbeatInterval       : 300,
+      isMoving                : true,
+      distanceFilter          : 10,
+      stopTimeout             : 5,
+      stationaryRadius        : 5,
+    ));
+
+    await bg.BackgroundGeolocation.getCurrentPosition(
+        persist:false,
+        desiredAccuracy:bg.Config.DESIRED_ACCURACY_HIGH
+    );
+
+    await bg.BackgroundGeolocation.start();
+
+    final payload = jsonEncode({"duration": duration});
+    await _webViewController.evaluateJavascript(
+        source: "window.webApp.call('startTracking', '$payload');"
+    );
+
+    debugPrint("✅ BackgroundGeolocation started successfully.");
+  }
 
   Future<void> _stopBackgroundGeolocation() async {
     bg.BackgroundGeolocation.stop();
     debugPrint("BackgroundGeolocation stopped.");
-  }
-
-  //sa creez alt connectionBox , cand internetul e foarte slow , si apare pe perioada cand se incarca pagina, ascult
-  // la call'ul lu cristi
-  //primu test sa facem doar cu onloadstop
-  Widget _buildNoConnectionBox(BuildContext context) {
-    final screenSize = MediaQuery.of(context).size;
-    final boxWidth = screenSize.width * 0.85;
-    final boxHeight = screenSize.height * 0.66;
-    return Center(
-      child: Container(
-        width: boxWidth,
-        height: boxHeight,
-        padding: EdgeInsets.all(screenSize.width * 0.04),
-        decoration: BoxDecoration(
-          color: const Color.fromRGBO(255, 255, 255, 0.95),
-          borderRadius: BorderRadius.circular(8),
-          boxShadow: const [
-            BoxShadow(
-              color: Color.fromRGBO(0, 0, 0, 0.1),
-              spreadRadius: 2,
-              blurRadius: 10,
-              offset: Offset(2, 5),
-            ),
-          ],
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Image.asset(
-              'assets/logo_connection_out.png',
-              width: screenSize.width * 0.15,
-              height: screenSize.width * 0.15,
-            ),
-            const SizedBox(height: 20),
-            Text(
-              AppLocalizations.of(context)!.welcome,
-              style: const TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-                color: Colors.black87,
-              ),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              AppLocalizations.of(context)!.noConnectionMessage,
-              style: const TextStyle(fontSize: 16, color: Colors.black54),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 20),
-            ElevatedButton(
-              onPressed: () {
-                _initConnectivity(); // Retry connectivity
-              },
-              child: Text(AppLocalizations.of(context)!.retry),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// Secondary WebView for target="_blank" links
-class NewTabWebView extends StatefulWidget {
-  final int? windowId;
-  const NewTabWebView({Key? key, this.windowId}) : super(key: key);
-
-  @override
-  _NewTabWebViewState createState() => _NewTabWebViewState();
-}
-
-class _NewTabWebViewState extends State<NewTabWebView> {
-  late InAppWebViewController _newWebViewController;
-  final String chromeUserAgent = "Mozilla/5.0 (Linux; Android 14; Pixel 8 Build/UP1A.230905.014) AppleWebKit/605.1.15 (KHTML, like Gecko) Chrome/134.0.0.0 Mobile Safari/604.1";
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        automaticallyImplyLeading: false,
-        backgroundColor: const Color(0xFF2199f9),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.close),
-            onPressed: () {
-              Navigator.pop(context);
-            },
-          ),
-        ],
-      ),
-      body: InAppWebView(
-        windowId: widget.windowId,
-        initialSettings: InAppWebViewSettings(
-            //userAgent: chromeUserAgent,
-            javaScriptEnabled: true,
-            allowsInlineMediaPlayback: true,
-            mediaPlaybackRequiresUserGesture: false,
-            hardwareAcceleration: false,
-            useShouldOverrideUrlLoading: true,
-            clearSessionCache: true),
-            onWebViewCreated: (controller) {
-            _newWebViewController = controller;
-        },
-        shouldOverrideUrlLoading: (controller, navigationAction) async {
-          final url = navigationAction.request.url.toString();
-
-          if (url.toLowerCase().endsWith(".pdf")) {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => PDFViewer(pdfUrl: url),
-              ),
-            );
-            return NavigationActionPolicy.CANCEL;
-          }
-          return NavigationActionPolicy.ALLOW;
-        },
-      ),
-    );
   }
 }

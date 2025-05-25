@@ -16,9 +16,9 @@ class GeolocationService {
     required void Function(String) onError,
   }) async {
     // Permission check
-    final status = await Permission.locationWhenInUse.status;
+    final status = await Permission.locationAlways.status;
     if (!status.isGranted) {
-      final req = await Permission.locationWhenInUse.request();
+      final req = await Permission.locationAlways.request();
       if (!req.isGranted) {
         onError('Location permission denied');
         return;

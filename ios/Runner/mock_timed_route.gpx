@@ -1,0 +1,13 @@
+<?xml version='1.0' encoding='utf-8'?>
+<gpx version="1.1" creator="Ceres">
+    <trk>
+        <name>MockRouteTimed</name>
+        <trkseg>
+            <trkpt lat="51.98408381439473" lon="5.108962840353017"><ele>5.0</ele>
+                <time>2025-05-20T17:20:00Z</time></trkpt>
+            <trkpt lat="51.99719153173957" lon="5.112739390645986"><ele>5.0</ele><time>2025-05-20T17:20:30Z</time>
+            </trkpt><trkpt lat="52.007019801931584" lon="5.116515940938955"><ele>5.0</ele><time>2025-05-20T17:21:00Z</time></trkpt><trkpt lat="52.01547250135804" lon="5.1214941208705955"><ele>5.0</ele><time>2025-05-20T17:21:30Z</time></trkpt><trkpt lat="52.021363307197504" lon="5.12722626025099"><ele>5.0</ele><time>2025-05-20T17:22:00Z</time></trkpt><trkpt lat="52.02855910261459" lon="5.133770850247328"><ele>5.0</ele><time>2025-05-20T17:22:30Z</time></trkpt><trkpt lat="52.03224237369882" lon="5.1364745169343395"><ele>5.0</ele><time>2025-05-20T17:23:00Z</time></trkpt><trkpt lat="52.03720572861936" lon="5.139049437588636"><ele>5.0</ele><time>2025-05-20T17:23:30Z</time></trkpt><trkpt lat="52.04331676240107" lon="5.140980628079359"><ele>5.0</ele><time>2025-05-20T17:24:00Z</time></trkpt><trkpt lat="52.04874307930131" lon="5.142890360897963"><ele>5.0</ele><time>2025-05-20T17:24:30Z</time></trkpt><trkpt lat="52.05068288924698" lon="5.144177821225111"><ele>5.0</ele><time>2025-05-20T17:25:00Z</time></trkpt><trkpt lat="52.05284693157518" lon="5.1462377577485485"><ele>5.0</ele><time>2025-05-20T17:25:30Z</time></trkpt><trkpt lat="52.0550636467477" lon="5.1488341360749645"><ele>5.0</ele><time>2025-05-20T17:26:00Z</time></trkpt><trkpt lat="52.05710873284232" lon="5.153082755154554"><ele>5.0</ele><time>2025-05-20T17:26:30Z</time></trkpt><trkpt lat="52.05925269973593" lon="5.159444996482407"><ele>5.0</ele><time>2025-05-20T17:27:00Z</time></trkpt><trkpt lat="52.06078870890911" lon="5.164507956909112"><ele>5.0</ele><time>2025-05-20T17:27:30Z</time></trkpt><trkpt lat="52.061435147263694" lon="5.167404742645196"><ele>5.0</ele><time>2025-05-20T17:28:00Z</time></trkpt><trkpt lat="52.06179134399181" lon="5.1735416368712706"><ele>5.0</ele><time>2025-05-20T17:28:30Z</time></trkpt><trkpt lat="52.062131950006716" lon="5.180115477420109"><ele>5.0</ele><time>2025-05-20T17:29:00Z</time>
+</trkpt>
+</trkseg>
+</trk>
+</gpx>
